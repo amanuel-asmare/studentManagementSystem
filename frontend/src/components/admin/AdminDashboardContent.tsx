@@ -1,0 +1,443 @@
+import React, { useState, useEffect } from 'react';
+import { FaSync } from 'react-icons/fa';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+
+interface OverviewData {
+  totalStudents: number;
+  totalCourses: number;
+  activeTeachers: number;
+}
+
+interface Activity {
+  student: string;
+  course: string;
+  status: string;
+  date: string;
+}
+
+interface AdminDashboardContentProps {
+  userName: string;
+}
+
+const AdminDashboardContent: React.FC<AdminDashboardContentProps> = ({ userName }) => {
+  const navigate = useNavigate();
+  const [overview, setOverview] = useState<OverviewData>({ totalStudents: 0, totalCourses: 0, activeTeachers: 0 });
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(2);
+
+  const fetchOverview = async (retries = retryCount) => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`Fetching overview data, attempt ${3 - retries}`);
+      const token = localStorage.getItem('token');
+      const [studentsRes, coursesRes, teachersRes] = await Promise.all([
+        axios.get(`${import.meta.env.VITE_API_URL}/api/student-list`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/course-list`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/teacher-list`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      if (!Array.isArray(studentsRes.data) || !Array.isArray(coursesRes.data) || !Array.isArray(teachersRes.data)) {
+        throw new Error('Invalid response format: Expected arrays');
+      }
+      setOverview({
+        totalStudents: studentsRes.data.length,
+        totalCourses: coursesRes.data.length,
+        activeTeachers: teachersRes.data.length,
+      });
+    } catch (error: any) {
+      console.error('Failed to fetch overview:', error);
+      if (error.response?.status === 401) {
+        setError("Session expired. Please log in again.");
+        setTimeout(() => navigate("/"), 3000);
+      } else if (retries > 0) {
+        console.log(`Retrying... (${retries} attempts left)`);
+        setTimeout(() => fetchOverview(retries - 1), 1000);
+        setRetryCount(retries - 1);
+      } else {
+        const errorMessage =
+          error.response?.status === 404
+            ? 'Some data (students, courses, or teachers) not found. Please add data via the respective pages.'
+            : 'Failed to fetch overview data. Please check your connection or try again.';
+        setError(errorMessage);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchActivities = async (retries = retryCount) => {
+    try {
+      console.log(`Fetching recent activities, attempt ${3 - retries}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/recent-activities`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid response format: Expected an array');
+      }
+      console.log('Activities fetched:', response.data);
+      setActivities(response.data);
+    } catch (error: any) {
+      console.error('Failed to fetch activities:', error);
+      if (error.response?.status === 401) {
+        setError("Session expired. Please log in again.");
+        setTimeout(() => navigate("/"), 3000);
+      } else if (retries > 0) {
+        console.log(`Retrying... (${retries} attempts left)`);
+        setTimeout(() => fetchActivities(retries - 1), 1000);
+        setRetryCount(retries - 1);
+      } else {
+        const errorMessage =
+          error.response?.status === 404 ? 'No recent activities found.' : 'Failed to fetch recent activities. Please try again.';
+        setError(errorMessage);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchOverview();
+    fetchActivities();
+  }, [navigate]);
+
+  const handleRefresh = () => {
+    setRetryCount(2);
+    fetchOverview();
+    fetchActivities();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
+          Welcome, {userName}!
+        </h2>
+        <p className="text-gray-600 dark:text-gray-300">
+          Manage students, teachers, courses, and library resources at Woldia University.
+        </p>
+      </div>
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center animate-slide-in">
+          {error}
+          <button
+            className="ml-2 px-2 py-1 bg-white text-red-500 rounded hover:bg-gray-200"
+            onClick={handleRefresh}
+          >
+            <FaSync />
+          </button>
+        </div>
+      )}
+      <div className="bg-white rounded-lg shadow p-6 mb-6 dark:bg-gray-700 dark:text-gray-200">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Overview</h2>
+          <button
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all"
+            onClick={handleRefresh}
+          >
+            <FaSync className="inline mr-2" />
+            Refresh
+          </button>
+        </div>
+        {loading ? (
+          <div className="flex justify-center items-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-100 p-4 rounded-lg dark:bg-blue-900">
+              <h3 className="text-lg font-medium dark:text-gray-200">Total Students</h3>
+              <p className="text-2xl font-bold dark:text-gray-200">{overview.totalStudents}</p>
+            </div>
+            <div className="bg-green-100 p-4 rounded-lg dark:bg-green-900">
+              <h3 className="text-lg font-medium dark:text-gray-200">Total Courses</h3>
+              <p className="text-2xl font-bold dark:text-gray-200">{overview.totalCourses}</p>
+            </div>
+            <div className="bg-yellow-100 p-4 rounded-lg dark:bg-yellow-900">
+              <h3 className="text-lg font-medium dark:text-gray-200">Active Teachers</h3>
+              <p className="text-2xl font-bold dark:text-gray-200">{overview.activeTeachers}</p>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="bg-white rounded-lg shadow p-6 dark:bg-gray-700 dark:text-gray-200">
+        <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
+        {loading ? (
+          <div className="flex justify-center items-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+          </div>
+        ) : activities.length === 0 ? (
+          <p className="text-gray-600 dark:text-gray-300">No recent activities found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+              <thead className="bg-gray-50 dark:bg-gray-600">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Student
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Course
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Status
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Date
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-700 dark:divide-gray-600">
+                {activities.map((activity, index) => (
+                  <tr key={index} className="hover:bg-blue-50 dark:hover:bg-blue-900">
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{activity.student}</td>
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{activity.course}</td>
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{activity.status}</td>
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{new Date(activity.date).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default AdminDashboardContent;/*import React, { useState, useEffect } from 'react';
+import { FaSync } from 'react-icons/fa';
+import axios from 'axios';
+
+interface OverviewData {
+  totalStudents: number;
+  totalCourses: number;
+  activeTeachers: number;
+}
+
+interface Activity {
+  student: string;
+  course: string;
+  status: string;
+  date: string;
+}
+
+interface AdminDashboardContentProps {
+  userName: string;
+}
+
+const AdminDashboardContent: React.FC<AdminDashboardContentProps> = ({ userName }) => {
+  const [overview, setOverview] = useState<OverviewData>({ totalStudents: 0, totalCourses: 0, activeTeachers: 0 });
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(2);
+
+  const fetchOverview = async (retries = retryCount) => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log(`Fetching overview data, attempt ${3 - retries}`);
+      const [studentsRes, coursesRes, teachersRes] = await Promise.all([
+        axios.get(`${import.meta.env.VITE_API_URL}/api/student-list`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/course-list`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/teacher-list`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }),
+      ]);
+      if (!Array.isArray(studentsRes.data) || !Array.isArray(coursesRes.data) || !Array.isArray(teachersRes.data)) {
+        throw new Error('Invalid response format: Expected arrays');
+      }
+      setOverview({
+        totalStudents: studentsRes.data.length,
+        totalCourses: coursesRes.data.length,
+        activeTeachers: teachersRes.data.length,
+      });
+    } catch (error: any) {
+      console.error('Failed to fetch overview:', error);
+      if (retries > 0) {
+        console.log(`Retrying... (${retries} attempts left)`);
+        setTimeout(() => fetchOverview(retries - 1), 1000);
+        setRetryCount(retries - 1);
+      } else {
+        const errorMessage =
+          error.response?.status === 404
+            ? 'Some data (students, courses, or teachers) not found. Please add data via the respective pages.'
+            : 'Failed to fetch overview data. Please check your connection or try again.';
+        setError(errorMessage);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchActivities = async (retries = retryCount) => {
+    try {
+      console.log(`Fetching recent activities, attempt ${3 - retries}`);
+      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/recent-activities`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid response format: Expected an array');
+      }
+      console.log('Activities fetched:', response.data);
+      setActivities(response.data);
+    } catch (error: any) {
+      console.error('Failed to fetch activities:', error);
+      if (retries > 0) {
+        console.log(`Retrying... (${retries} attempts left)`);
+        setTimeout(() => fetchActivities(retries - 1), 1000);
+        setRetryCount(retries - 1);
+      } else {
+        const errorMessage =
+          error.response?.status === 404 ? 'No recent activities found.' : 'Failed to fetch recent activities. Please try again.';
+        setError(errorMessage);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchOverview();
+    fetchActivities();
+  }, []);
+
+  const handleRefresh = () => {
+    setRetryCount(2);
+    fetchOverview();
+    fetchActivities();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
+          Welcome, {userName}!
+        </h2>
+        <p className="text-gray-600 dark:text-gray-300">
+          Manage students, teachers, courses, and library resources at Woldia University.
+        </p>
+      </div>
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center animate-slide-in">
+          {error}
+          <button
+            className="ml-2 px-2 py-1 bg-white text-red-500 rounded hover:bg-gray-200"
+            onClick={handleRefresh}
+          >
+            <FaSync />
+          </button>
+        </div>
+      )}
+      <div className="bg-white rounded-lg shadow p-6 mb-6 dark:bg-gray-700 dark:text-gray-200">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Overview</h2>
+          <button
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all"
+            onClick={handleRefresh}
+          >
+            <FaSync className="inline mr-2" />
+            Refresh
+          </button>
+        </div>
+        {loading ? (
+          <div className="flex justify-center items-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-blue-100 p-4 rounded-lg dark:bg-blue-900">
+              <h3 className="text-lg font-medium dark:text-gray-200">Total Students</h3>
+              <p className="text-2xl font-bold dark:text-gray-200">{overview.totalStudents}</p>
+            </div>
+            <div className="bg-green-100 p-4 rounded-lg dark:bg-green-900">
+              <h3 className="text-lg font-medium dark:text-gray-200">Total Courses</h3>
+              <p className="text-2xl font-bold dark:text-gray-200">{overview.totalCourses}</p>
+            </div>
+            <div className="bg-yellow-100 p-4 rounded-lg dark:bg-yellow-900">
+              <h3 className="text-lg font-medium dark:text-gray-200">Active Teachers</h3>
+              <p className="text-2xl font-bold dark:text-gray-200">{overview.activeTeachers}</p>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="bg-white rounded-lg shadow p-6 dark:bg-gray-700 dark:text-gray-200">
+        <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
+        {loading ? (
+          <div className="flex justify-center items-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+          </div>
+        ) : activities.length === 0 ? (
+          <p className="text-gray-600 dark:text-gray-300">No recent activities found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+              <thead className="bg-gray-50 dark:bg-gray-600">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Student
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Course
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Status
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider dark:text-gray-200">
+                    Date
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-700 dark:divide-gray-600">
+                {activities.map((activity, index) => (
+                  <tr key={index} className="hover:bg-blue-50 dark:hover:bg-blue-900">
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{activity.student}</td>
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{activity.course}</td>
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{activity.status}</td>
+                    <td className="px-6 py-3 whitespace-nowrap dark:text-gray-200">{new Date(activity.date).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default AdminDashboardContent;*/
+
+/*import React from 'react';
+
+interface AdminDashboardContentProps {
+  userName: string;
+}
+
+const AdminDashboardContent: React.FC<AdminDashboardContentProps> = ({ userName }) => {
+  return (
+    <div className="space-y-6">
+      <div className="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
+          Welcome, {userName}!
+        </h2>
+        <p className="text-gray-600 dark:text-gray-300">
+          Manage students, teachers, courses, and library resources at Woldia University.
+        </p>
+      </div>
+      //{/* Add more admin dashboard content here }
+    </div>
+  );
+};
+
+export default AdminDashboardContent;*/

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, Component } from "react";
 import axios from "axios";
 import { format } from "date-fns";
@@ -99,7 +98,10 @@ const AddLibrary: React.FC = () => {
     try {
       console.log(`Fetching courses for ${department}, attempt ${attempt}`);
       const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-      const response = await axios.get(`${apiUrl}/api/course-list/department/${encodeURIComponent(department)}`);
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${apiUrl}/api/course-list/department/${encodeURIComponent(department)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       console.log("Courses fetched:", response.data);
       if (!Array.isArray(response.data)) {
         throw new Error("Invalid response format: Expected an array");
@@ -113,6 +115,11 @@ const AddLibrary: React.FC = () => {
       setBookInfo((prev) => ({ ...prev, courseCode: "" }));
     } catch (error: any) {
       console.error(`Failed to fetch courses for ${department} (attempt ${attempt}):`, error);
+      if (error.response?.status === 401) {
+        setFetchError("Unauthorized. Please log in again.");
+        navigate("/");
+        return;
+      }
       if (attempt < maxRetries) {
         console.log(`Retrying... (${attempt + 1}/${maxRetries})`);
         setTimeout(() => fetchCourses(department, attempt + 1), 1000);
@@ -226,8 +233,12 @@ const AddLibrary: React.FC = () => {
         formData.append("onlineUrl", bookInfo.onlineUrl);
       }
 
+      const token = localStorage.getItem("token");
       const response = await axios.post(`${apiUrl}/api/addBook`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`,
+        },
       });
       setShowSuccessToast(true);
       setBookInfo({
@@ -247,10 +258,10 @@ const AddLibrary: React.FC = () => {
       setTimeout(() => {
         setShowSuccessToast(false);
         try {
-          navigate("/components/admin");
+          navigate("/components/admin/book-list");
         } catch (navError) {
           console.error("Navigation error:", navError);
-          setShowErrorToast("Failed to navigate. Please go back manually.");
+          setShowErrorToast("Failed to navigate. Please go to Book List manually.");
           setTimeout(() => setShowErrorToast(null), 5000);
         }
       }, 3000);
@@ -260,6 +271,9 @@ const AddLibrary: React.FC = () => {
       const errorMessage = error.response?.data?.message || "Failed to add book. Please check your input or try again.";
       setShowErrorToast(errorMessage);
       setTimeout(() => setShowErrorToast(null), 5000);
+      if (error.response?.status === 401) {
+        navigate("/");
+      }
     } finally {
       setIsSubmitting(false);
     }

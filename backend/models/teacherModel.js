@@ -1,4 +1,22 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
+
+const teacherSchema = new mongoose.Schema({
+    teacherId: { type: String, required: true, unique: true },
+    name: { type: String, required: true },
+    department: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    phone: { type: String, required: true },
+    salary: { type: Number, required: true },
+    hireDate: { type: Date, required: true },
+    position: { type: String, required: true },
+    coursesAssigned: [{ type: String }],
+    status: { type: String, required: true },
+    password: { type: String, required: true },
+    role: { type: String, default: 'teacher' },
+});
+
+module.exports = mongoose.model('Teacher', teacherSchema);
+/*const mongoose = require("mongoose");
 
 const teacherSchema = mongoose.Schema({
     teacherId: {
@@ -63,4 +81,4 @@ const teacherSchema = mongoose.Schema({
     },
 });
 
-module.exports = mongoose.model("Teacher", teacherSchema);
+module.exports = mongoose.model("teachers", teacherSchema);*/
